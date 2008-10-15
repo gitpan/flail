@@ -2,6 +2,13 @@
 use vars qw($GREP_HEADERS);
 $GREP_HEADERS = 'From,To,Subject,Sender';
 
+sub set_m {
+  $F = $FOLDER if $FOLDER;
+  return $M if $M;
+  return $FOLDER->get_message($FOLDER->current_message) if ($FOLDER && defined($FOLDER->current_message));
+  return undef;
+}
+
 sub grep_array {
   my $re = shift(@_);
   foreach my $elt (@_) {
@@ -27,6 +34,7 @@ sub slurp1 {
   if ($outf) {
     open(OUTF, ">>$outf") || die "$outf: $!\n";
   }
+  $M = set_m();
   my $body = $M->body();
   foreach my $line (@$body) {
     if ($line =~ /$re/i) {
@@ -40,6 +48,7 @@ sub slurp1 {
 }
 
 sub grep_msg {
+  $M = set_m();
   say "grep_msg(@_) N=$N M=$M";
   my $re = "@_";
   my $body = $M->body();
@@ -59,6 +68,7 @@ sub grep_msg {
 }
 
 sub grep_headers {
+  $M = set_m();
   say "grep_headers(@_) N=$N M=$M";
   my $fieldstr = shift(@_);
   $fieldstr = $GREP_HEADERS unless ($fieldstr ne '_');

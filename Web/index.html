@@ -2,24 +2,25 @@
 <html>
 
   <head>
-    <!-- Time-stamp: <2008-08-05 23:11:40 snl@cluefactory.com> -->
+    <!-- Time-stamp: <2008-09-07 20:17:13 snl@cluefactory.com> -->
     <title>flail - the Perl MUA from the Clue Factory</title>
     <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
-    <link rel="stylesheet" type="text/css" href="/flail.css">
+    <link rel="stylesheet" type="text/css" href="flail.css">
   </head>
 
   <body>
 
-    <div align=center>
-      <img src="flail.png">
-    </div>
+    <div align="center"><a href="index.html" title="flail: the perl MUA from the cluef actory"><img src="flail.png"></a></div>
 
-    <div align=center style="margin-left: 1in; margin-right: 1in">
+    <div style="margin-left: 10%; margin-right: 10%">
+
+      <h1>Welcome to the flail Home Page</h1>
 
       <p>
-        Flail is a hacker's MUA (<em>Mail User Agent</em>, a program
-        you use to read your mail).  It has a terse, extensible,
-        Unix-like command-line interface.  It is written in Perl, and
+        Flail is a hacker's <a href="http://en.wikipedia.org/wiki/E-mail_client" title="wikipedia: MUA">MUA</a>
+        (<em>Mail User Agent</em>, a program you use to read your mail).  It has a terse, extensible,
+        Unix-like command-line interface.  It is written in
+        <a href="http://www.perl.org" title="Perl: everyone ends up here eventually">Perl</a>, and
         is designed to make Perl hackers happy.  It now comes with a
         Makefile.PL and a README, so what more could you possibly ask?
       </p>
@@ -35,11 +36,18 @@
       </p>
 
       <p>
-        I use flail to read all my mail, from multiple
-        mailboxes, with GnuPG and EMACS as my trusty helper apps.
+        I use flail to read all my mail, from multiple mailboxes,
+        faced with hundreds or even thousands of spams a day,
+        using <a href="http://www.gnupg.org" title="The GNU Privacy Guard">GnuPG</a> and
+        <a href="http://www.gnu.org/software/emacs/" title="EMACS: The one, true editor">EMACS</a>
+        as my trusty helper apps.  I also highly recommend
+        <a href="http://www.catb.org/~esr/fetchmail/" title="Fetchmail: email protocol swiss army knife / utility belt">fetchmail</a>,
+        <a href="http://www.courier-mta.org/maildrop/" title="Maildrop: mail filtering tool">maildrop</a>,
+        and <a href="http://bmf.sourceforge.net/" title="bmf: bayesian mail filter">bmf</a>.
         <a href="bits/eg/dot.flailrc">My .flailrc</a> and
         <a href="bits/eg">associated helper modules</a> are
-        included, and are probably the best source of examples.
+        included, and are probably the best source of examples, along
+        with <a href="spam.html" title="Flail-based spam mitigation setup">the page on spam mitigation hacks in flail</a>.
       </p>
 
       <p>
@@ -56,9 +64,10 @@
 
       <p>
         There is a modicum of documentation in flail itself, via the
-        help command, including a brand-spanking new POD.
-        To get at it, you have to get flail running.
-        Unpack <a href="bits/flail-0.2.4.tar.gz">the tarball</a>,
+        help command, including a brand-spanking new POD, also
+        known as <a href="flail.html" title="the flail manual">the man page</a>.
+        To get at all this goodness yourself,
+        unpack <a href="bits/flail-0.2.5.tar.gz">the tarball</a>,
         read the <a href="bits/README">README</a>, and follow the instructions.
       </p>
 
@@ -73,14 +82,14 @@
       </p>
 
       <p>
-        The latest release is <a href="bits/flail-0.2.4.tar.gz">0.2.4</a>.
-        You can read <a href="flail.html">the manual</a> to get a better idea
+        The latest release is <a href="bits/flail-0.2.5.tar.gz">0.2.5</a>.
+        You can read <a href="flail.html" title="the flail manual">the manual</a> to get a better idea
         of how flail works.  You might also find some of the CPAN modules
         cached in my <a href="bits/">bits</a> directory of use.
         However, I would suggest trying to satisfy the dependences
         that Makefile.PL complains about using whatever means are
         normal on your system first.  For instance, under
-        <a href="http://www.openbsd.org">OpenBSD</a> you would look
+        <a href="http://www.openbsd.org" title="OpenBSD: it's the 'open' stupid!">OpenBSD</a> you would look
         in <tt>/usr/ports</tt> for the missing Perl modules first.
       </p>
 
@@ -91,9 +100,25 @@
           <td>Description</td>
         </tr>
 
+        <!-- 0.2.5 -->
+        <tr class="data">
+          <td width="10%" valign="top"><p class="rel"><a href="bits/flail-0.2.5.tar.gz">0.2.5</a></p></td>
+          <td>
+            <p class="desc">
+              Recovered "lost" changes from a source tree on a dead laptop:
+              multiple commands separated by semi-colons on the same line,
+              reorganized SMTP code into <tt>send_via_program</tt> and
+              <tt>send_via_smtp</tt> so that we can use e.g. <tt>msmtp</tt>
+              to hack up outbound email via Gmail easily, updated example
+              code in <tt>eg/</tt> subdir a bit.  Nothing major, but
+              slightly comfier to use.
+            </p>
+          </td>
+        </tr>
+
         <!-- 0.2.4 -->
         <tr class="data">
-          <td width="10%" valign="top"><p class="ref"><a href="bits/flail-0.2.4.tar.gz">0.2.4</a></p></td>
+          <td width="10%" valign="top"><p class="rel"><a href="bits/flail-0.2.4.tar.gz">0.2.4</a></p></td>
           <td>
             <p class="desc">
               Fixed bug in ls output for messages with goofy whitespace in
@@ -275,11 +300,22 @@
           <td width="10%">&nbsp;</td>
           <td>
             <p class="desc">
-              A few links to some stuff of note:
+              A few links to some related content of mine:
             </p>
             <menu>
+              <li><p class="desc"><a title="freshmeat.net: flail project page" href="http://freshmeat.net/projects/flail/">freshmeat project page</a> for flail.  releases are announced here.</p></li>
               <li><p class="desc"><a title="the clue factory" href="http://cluefactory.com">the clue factory</a>, our home sweet home on the web.</p></li>
-              <li><p class="desc"><a title="multilingual web hosting in mexico and elsewhere" href="http://redyucatan.com">redyucatan.com</a> web design and hosting for rural mexico.</p></li>
+              <li><p class="desc"><a title="red yucatan: multilingual web hosting in mexico and elsewhere" href="http://redyucatan.com">redyucatan.com</a> web design and hosting for rural mexico (for the non-spanish-enabled, "red" means "network").</p></li>
+              <li><p class="desc"><a title="uncacheable at any speed: my blog" href="http://uncacheable.blogspot.com">uncacheable.blogspot.com</a> my blog, mainly centered around topics of interest to hackers</p></li>
+              <li><p class="desc"><a title="~attila" href="http://www.stalphonsos.com/~attila">www.stalphonsos.com/~attila</a> my ancient web pages, from the old days of the empire.</p></li>
+            </menu>
+            <p class="desc">
+              ... and let's not forget the obligatory <b>URLs of Power And Majesty!!!</b>
+            </p>
+            <menu>
+              <li><p class="desc"><a href="http://www.openbsd.org" title="OpenBSD: You need it. We all need it.">OpenBSD: ALL YOUR BASE BELONG TO YOU!1!!</a></p></li>
+              <li><p class="desc"><a href="http://cr.yp.to/qmail.html" title="qmail: the bestest MTA on the wild frontier">qmail</a>, the open-source mail server for <a href="http://lifewithqmail.org" title="clueful qmail people">discerning peoples</a></p></li>
+              <li><p class="desc">flail would not exist without <a href="http://perl.org" title="perl: a programming language for the communist in us all">perl</a>, which both <a href="http://www.cpan.org" title="CPAN!">inspired and hindered</a> its <a href="http://search.cpan.org/~attila/flail-0.2.4/flail0.pl" title="pathetic first attempt at uploading to CPAN">birth</a></p></li>
             </menu>
           </td>
         </tr>

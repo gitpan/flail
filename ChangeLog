@@ -1,3 +1,11 @@
+2008-09-06  attila  <attila@stalphonsos.com>
+
+        * flail0.pl: Pulled in lost wordification code from a source
+        tree that was dead in SVN - switched to GIT at some point and
+        did not merge changes.  This mod adds the ability to enter
+        multiple commands on a single line/alias separated by
+        semicolons.  Uses Text::Balanced and a couple helper subs.
+
 2008-08-05  attila  <attila@stalphonsos.com>
 
         * flail0.pl: A lot has happened, but still under the flail0

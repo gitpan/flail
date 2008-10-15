@@ -35,6 +35,7 @@ use Proc::Simple;                       # for external editor processes
 use Proc::SyncExec qw(sync_exec);       # actually, we use this now, no?
 use SecretPipe;                         # for remembering passwords
 use Symbol;                             # for PGP::GPG::MessageProcessor
+use Text::Balanced qw(extract_delimited);
 ###
 ## XXX This dog-choking wad of crap has got to go, but at least we
 ##     can now trip through perl -cw with use strict.  Feh.
@@ -50,7 +51,7 @@ use vars
       $SUBDIR $MESSAGE $MAX_PAGE_LINES $MAX_LINE_WIDTH $N_LINES $RECENT_LINES
       %SHOW_HEADERS %PASSWORDS $POP3Server $POP3User $IMAPServer $IMAPUser
       $IMAPInbox $RemoveFromServer $FromAddress $SMTPHost $SMTPPort $SMTPAuth
-      $SMTPPass $SMTPDebug
+      $SMTPPass $SMTPDebug $SMTPCommand
       $TempDir $TempCounter $AskBeforeSending $REPL $FCCFolder
       $DontCacheConnections $CheckType $SyncImmediately $AllowCommandOverrides
       %IDENTITIES $AddressBook %ADDRESSBOOK $NoAddressBook $AskAddressBook
@@ -73,7 +74,7 @@ use vars
 eval "use PGP::GPG::MessageProcessor";  # give it a shot
 $HaveGPGMP = 1 unless $@;               # perl needs hygenic macros
 
-$VERSION='0.2.4';
+$VERSION='0.2.5';
 $BANNER = <<__FooF__;
 flail $VERSION - the perl mua from stalphonsos.com
 Copyright (C) 1999,2000 by St.Alphonsos.  All Rights Reserved.
@@ -320,6 +321,83 @@ sub address_email {
   dsay "e is now $e";
   my @tmp = split("\@", $e);
   return lc($tmp[0]), lc($tmp[1]);
+}
+
+# extract a word-like thing using Text::Balanced
+sub word_extract {
+    my($string) = @_;
+    my($x,$str) = extract_delimited($string,q{\"\'},'','\\');
+    if ($x) {
+        $x = substr($x,1,length($x)-2);
+        $str =~ s/^\s+//;
+    } elsif ($string =~ /^(\S+)\s+(\S.*)$/) {
+        ($x,$str) = ($1,$2);
+    } else {
+        ($x,$str) = ($string,'');
+    }
+    return($x,$str);
+}
+
+# Turn a string into a list of "words" ala word_extract
+sub wordify {
+    my($string) = @_;
+    $string =~ s/^\s+//;
+    $string =~ s/\s+$//;
+    my @words = ();
+    my($word,$rest) = word_extract($string);
+    while ($word) {
+        push(@words, $word);
+        ($word,$rest) = word_extract($rest);
+    }
+    return @words;
+}
+
+# Turn a string containing a possibly semicolon-delimited list of
+# commands that contain quoted phrases into a vector of vectors
+# with the quotes stripped off.  The outer vector contains one
+# sub-vector per command, the inner vectors contain one element
+# per "word".
+sub commandify {
+    my @words = wordify(shift(@_));
+    my $commands;
+    my($wantref0,$wantref1) = (0,0);
+    if (@_ && (ref($_[0]) eq 'ARRAY')) {
+        $wantref0 = 1;
+        $commands = shift(@_);
+        if ((@$commands == 1) && (ref($commands->[0]) eq 'ARRAY') && !scalar(@{$commands->[0]})) {
+            shift(@$commands);
+            $wantref1 = 1;
+        }
+    } else {
+        $commands = [];
+    }
+    my $cmd = [];
+    while (@words > 0) {
+        my $word = shift(@words);
+        if ($word =~ /^;(.*)$/) {
+            my $c = $1;
+            if (@$cmd) {
+                push(@$commands,$wantref1 ? $cmd : join(' ',@$cmd));
+                $cmd = [];
+            }
+            if ($c && length($c)) {
+                push(@$cmd, (!$wantref1 && ($c =~ /\s/)) ? qq|"$c"| : $c);
+            }
+        } elsif ($word =~ /^([^;].*);$/) {
+            my $c = $1;
+            if ($c && length($c)) {
+                push(@$cmd, (!$wantref1 && ($c =~ /\s/)) ? qq|"$c"| : $c);
+            }
+            push(@$commands,$wantref1 ? $cmd : join(' ',@$cmd));
+            $cmd = [];
+        } elsif ($word && length($word)) {
+            push(@$cmd, (!$wantref1 && ($word =~ /\s/)) ? qq|"$word"| : $word);
+        }
+    }
+    if (@$cmd) {
+        push(@$commands,$wantref1 ? $cmd : join(' ',@$cmd));
+    }
+    return $wantref0 ? $commands : @$commands;
 }
 
 # gpg_op - run gpg on a message
@@ -633,7 +711,10 @@ sub page_header_lines {
     my $j = 0;
     while ($j < $n) {
       my $v = $head->get($tag, $j);
-      chomp($v);
+#      chomp($v);
+      $v = psychochomp($v);
+      $v =~ s/\n+/ /gs;
+      $v =~ s/\s{2,}/ /gs;
       ++$j;
       my $x = colored_("$tag: ", "bold red") . colored_("$v", "magenta");
       return -1 if (print_paged_line($x, 1) < 0);
@@ -1965,7 +2046,7 @@ sub filter_addresses {
     my @xlist = ();
     foreach my $v (@alist) {
       my ($a,$k) = addressbook_lookup($v);
-      if ($a) {
+      if ($a && ($a ne $v)) {
         if ($interactive) {
           my $yorn =
             $REPL->readline("Addressbook: $v => $a; replace $h? [y]/n ");
@@ -2001,11 +2082,11 @@ sub edit_msg {
   close(TMP);
   if (!$edited) {
     print "could not parse edited message\n";
-    unlink($name);
+    unlink($name) unless $OPT->{'keep'};
     return undef;
   }
   say "parsed back message";
-  unlink($name);
+  unlink($name) unless $OPT->{'keep'};
   filter_addresses($edited,$AskAddressBook)
     unless ($NoAddressBook || !$AutoAddressBook);
   sign_msg($edited) if $AutoDotSig;
@@ -2109,7 +2190,207 @@ sub pipe_msg {
   return $newmsg;
 }
 
+sub prepare_to_send {
+  my($edited) = @_;
+  my $hdrs = $edited->head;
+  my $use_from = $hdrs->get("From");
+  $hdrs->replace("Sender", $use_from);
+  $hdrs->replace("X-Mailer", "flail $VERSION - http://flail.org");
+  $hdrs->replace("Date", POSIX::strftime($DateHeaderFmt, localtime));
+  my @recips = headaddrs($hdrs, "To");
+  my @tmp = headaddrs($hdrs, "Cc");
+  foreach my $t (@tmp) {
+    push(@recips, $t);
+  }
+  @tmp = headaddrs($hdrs, "Bcc");
+  foreach my $t (@tmp) {
+    push(@recips, $t);
+  }
+  $hdrs->delete("Bcc");
+  my $fccfn = $hdrs->get("Fcc");
+  say "fccfn is $fccfn";
+  $hdrs->delete("Fcc");
+  return($fccfn,$hdrs,@recips);
+}
+
+sub send_via_smtp {
+  my($edited) = @_;
+  say "sending message via SMTP host $SMTPHost";
+  my %smtp_opts = (
+      Port => $SMTPPort,
+      Hello => $Domain,
+      Timeout => $SMTPTout,
+  );
+  $smtp_opts{'Debug'} = 1 if $OPT->{debug};
+  my $smtp = new Net::SMTP($SMTPHost,%smtp_opts);
+  if (!$smtp) {
+    flail_emit("ERROR: cannot connect to SMTP server $SMTPHost:$SMTPPort\n");
+    return;
+  }
+  say "smtp connection initialized to $SMTPHost: $smtp";
+  my($fccfn,$hdrs,@recips) = prepare_to_send($edited);
+  my $ha = $hdrs->header;
+  my $use_from = $hdrs->get("Sender");
+  $smtp->mail($use_from);
+  $smtp->to(@recips);
+  say "MAIL/RCPT sent for @recips";
+  $smtp->data();
+  foreach (@$ha) {
+    say "header $_";
+    $smtp->datasend($_);
+  }
+  $smtp->datasend("\n");
+#  $smtp->datasend("\n");
+  my $body = $edited->body;
+  foreach (@$body) {
+    say "body @recips: $_";
+    $_ .= "\n" if ($_ !~ /.*\n$/);
+    $smtp->datasend("$_");
+  }
+  $smtp->dataend();
+  $smtp->quit;
+  return($fccfn,@recips);
+}
+
+sub send_via_program {
+  my($edited) = @_;
+  if (!$SMTPCommand) {
+    die(qq{no SMTP command defined!\n});
+  }
+  say "sending message via SMTP command $SMTPCommand";
+  my($fccfn,$hdrs,@recips) = prepare_to_send($edited);
+  open(PROGRAM, "|$SMTPCommand")
+      or die(qq{could not fork smtp command "$SMTPCommand": $!\n});
+  $edited->print(\*PROGRAM);
+  close(PROGRAM);
+  return($fccfn,@recips);
+}
+
 sub send_internal {
+  #dump_OPT() if $Verbose;
+  my $srcmsg = shift(@_);
+  my $newmsg = shift(@_);
+  my $use_from = shift(@_) || $FromAddress;
+  my $hdrs;
+  if (defined($newmsg)) {
+    $hdrs = $newmsg->head();
+    if (defined($_[0])) {
+      $hdrs->add("To", join(", ", @_));
+    } elsif (!$HeadersFromStdin) {
+      my $nto = $hdrs->count("To");
+      if (!$nto) {
+        my $x = get_header("To");
+        $hdrs->add("To", $x) if defined($x);
+      }
+    }
+    $hdrs->add("From", $use_from) if !$hdrs->count("From");
+    $hdrs->delete("Mail-From");
+    $hdrs->delete("Status");
+  } else {
+    say "consing up new message: @_";
+    $hdrs = new Mail::Header;
+    my $x;
+    $hdrs->add("From", $use_from);
+    if (defined($_[0])) {
+      $hdrs->add("To", join(", ", @_));
+    } elsif (!$HeadersFromStdin) {
+      ($x = get_header("To")) and $hdrs->add("To", $x);
+    }
+    if (!$HeadersFromStdin) {
+      $x = $DefaultSubject || get_header("Subject");
+    }
+    $hdrs->add("Subject", $x) if defined($x);
+    if (!$NoDefaultCC) {
+      while ($x = get_header("Cc")) {
+        last if ($x eq "");
+        $hdrs->add("Cc", $x);
+      }
+    }
+    $newmsg = new Mail::Internet(Header => $hdrs);
+    say "new, empty message:";
+    $newmsg->print(\*STDOUT) if $Verbose;
+  }
+ EDIT:
+  $hdrs = $newmsg->head();
+  get_default_header("Fcc", $hdrs);
+  get_default_header("Bcc", $hdrs);
+  say "before editing:";
+  print $newmsg->as_string if $Verbose;
+  my $edited = edit_msg($newmsg);
+  if (!$edited) {
+    print "send aborted\n";
+    return;
+  }
+  if ($AskBeforeSending) {
+    my $done = 0;
+    my $first_time = 1;
+    my $def_ans_str = "";
+    $def_ans_str = "<" . $DEF_COMPOSER_ACTION . "> "
+      if defined($DEF_COMPOSER_ACTION);
+    while (!$done) {
+      my $def = "";
+      $def = $def_ans_str if $first_time;
+      my $yorn =
+        $REPL->readline(colored_("Action? [y=send,n=abort,h=help] $def", "cyan"));
+      chomp($yorn);
+      $yorn = $DEF_COMPOSER_ACTION
+        if ($first_time && !length($yorn) && defined($DEF_COMPOSER_ACTION));
+      $first_time = 0;
+      my $won = 0;
+      while (defined($yorn)) {
+        ($yorn =~ /^[h\?]/) && print $ComposerActionHelp;
+        ($yorn =~ /^[yY]/) && ($done = 1,$yorn=undef);
+        ($yorn =~ /^[nN]/) && ($done = -1,$yorn=undef);
+        ($yorn =~ /^d/) &&(save_msg($edited,$DraftsFolder,"draft"),$done=-1,$yorn=undef);
+        ($yorn =~ /^e/) && ($done = 2,$yorn=undef);
+        ($yorn =~ /^[pP]/) && page_msg($edited);
+        ($yorn =~ /^s/) && sign_msg($edited);
+        ($yorn =~ /^[aA]/) && filter_addresses($edited,$AskAddressBook);
+        ($yorn =~ /^S/ && !$HaveGPGMP) &&
+          ($edited = pipe_msg($CryptoSignCmd, $edited, 1));
+        ($yorn =~ /^S/ && $HaveGPGMP)&&
+                     (($won,$edited)=gpg_op($edited, "s", undef));
+        ($yorn =~ /^E/ && !$HaveGPGMP) &&
+          ($edited = pipe_msg($CryptoCryptCmd, $edited, 1));
+        ($yorn =~ /^E/ && $HaveGPGMP) &&
+                     (($won,$edited)=gpg_op($edited,"se",undef));
+        ($yorn =~ /^2/ && $HaveGPGMP) &&
+                     (($won,$edited)=gpg_op($edited,"sei",undef));
+        ($yorn =~ /^\|(.*)$/) && ($edited = pipe_msg($1, $edited),$yorn=undef);
+        ($yorn =~ /^\:(.*)$/) && ($edited =pipe_msg($1,$edited,1),$yorn=undef);
+        ($yorn =~ /^,(.*)$/) && (invoke_code_on_msg($edited, $1),$yorn=undef);
+        $yorn = substr($yorn, 1);
+        $yorn = undef if ($yorn eq "");
+      }
+    }
+    if ($done < 0) {
+      print "send aborted\n";
+      return;
+    }
+    if ($done == 2) {
+      $newmsg = $edited;
+      goto EDIT;
+    }
+  }
+  my @recips;
+  my $fccfn;
+  if (!$SMTPCommand) {
+    ($fccfn,@recips) = send_via_smtp($edited);
+  } else {
+    ($fccfn,@recips) = send_via_program($edited);
+  }
+  if ($#recips < 0) {
+    print "message not sent\n" unless $Quiet;
+  } else {
+    print "message sent to:\n    " . join("\n    ", @recips) . "\n"
+      unless $Quiet;
+  }
+  my @fcclist = split(/,/, $fccfn);
+  push(@fcclist, $FCCFolder) unless defined($fcclist[0]);
+  save_fccs($edited, @fcclist);
+}
+
+sub send_internal_old {
   #dump_OPT() if $Verbose;
   local($SMTPDebug) = (1) if $OPT->{debug};
   local($Verbose) = (1) if $OPT->{verbose};
@@ -3189,39 +3470,6 @@ sub parse_cmd_opts {
   return \%opthash;
 }
 
-# get_command_word - parse out the command word plus options
-#
-sub get_command_word {
-  my $str = shift(@_);
-  my $i = 0;
-  my $done = 0;
-  my $instr = 0;
-  my $quote = 0;
-  my $cmd;
-  my $rest;
-  while (($i < length($str)) && !$done) {
-    my $c = substr($str,$i,1);
-    if ($quote) {
-      $quote = 0;
-      next;
-    }
-    $quote = 1 if ($c eq "\\");
-    $instr = !$instr if (($c eq "\"") || ($c eq "\'"));
-    if (!$instr && ($c =~ /\s/)) {
-      $cmd = substr($str, 0, $i);
-      $rest = substr($str, $i + 1);
-      $rest = psychochomp($rest);
-      last;
-    }
-    ++$i;
-  }
-  if (!defined($cmd)) {
-    $cmd = $str;
-    $rest = "";
-  }
-  return ($cmd, $rest);
-}
-
 sub expand_words {
   my @words;
   foreach (@_) {
@@ -3240,20 +3488,21 @@ sub expand_words {
 
 sub flail_eval {
   my $line = shift(@_);
-  my $cmd;
-  my @words;
-  say "flail_eval($line)";
-  if ($line =~ /^\S+\//) {
-    my($c,$r) = get_command_word($line);
-    $cmd = $c;
-    $line = $r;
-    say "command word: $cmd";
-    say "rest of line: $line";
-    @words = split(/ /, $line);
-  } else {
-    @words = split(" ", $line);
-    $cmd = shift(@words);
+  my $commands = commandify($line,[[]]);
+  my $quit = 0;
+  foreach my $cmd (@$commands) {
+    $quit = flail_eval_($cmd);
+    last if $quit;
   }
+  return $quit ? -1 : 0;
+}
+
+sub flail_eval_ {
+  my($cmdvec) = @_;
+  return 0 unless ($cmdvec && @$cmdvec);
+  my $cmd = shift(@$cmdvec);
+  my @words = @$cmdvec;
+  my $line = join(' ', map { ($_ =~ /\s/) ? qq|"$_"| : $_ } @words);
   @words = expand_words(@words);
   my $opthash = {};
   if ($cmd =~ /^([^\/]+)(\/.*)$/) {
@@ -3264,7 +3513,7 @@ sub flail_eval {
     my $optstr = shift(@words);
     $opthash = parse_cmd_opts($optstr, $opthash);
   }
-  say("flail_eval cmd=$cmd words=(@words)");
+  say("flail_eval cmd=$cmd words=(@words) opthash={".join(", ", map { my $v = $opthash->{$_}; qq|$_="$v"| } sort keys %$opthash)."}");
   my $cinfo;
   my $proc;
   $cmd = lc($cmd);
@@ -3272,19 +3521,20 @@ sub flail_eval {
   if ($cmd =~ /^!(.+)$/) {
     my $x = $1;
     unshift(@words, $x);
-    $x = join(" ", @words);
+    $x = join(" ", map { ($_ =~ /\s/) ? qq|"$_"| : $_ } @words);
     do_shell_esc($x);
     return 0;
   } elsif ($cmd =~ /^\|(.+)$/) {
     my $x = $1;
     unshift(@words, $x);
-    $x = join(" ", @words);
+    $x = join(" ", map { ($_ =~ /\s/) ? qq|"$_"| : $_ } @words);
     do_shell_pipe($x);
     return 0;
   } elsif ($cmd =~ /^,(.+)$/) {
-    my $x = substr($line, 1);
-    print "[eval: $x]\n" unless $Quiet;
-    eval $x;
+    my $string = $1;
+    $string .= " $line" if ($line && length($line));
+    print "[eval: $string]\n" unless $Quiet;
+    eval $string;
     print "\n";
     print "whoops: $@\n" if ($@);
     return 0;
@@ -4271,7 +4521,10 @@ B<Caterpillar>: I know, I have improved it.
 
 Z<>
 
-
+  0.2.5    06 Sep 08     attila  found some lost hacks from a source
+                                 tree recovered from a dead laptop:
+                                 semi-colon-separated commands,
+                                 send_via_program, a couple other things.
   0.2.4    05 Aug 08     attila  revived from the dead AGAIN after
                                  t-bird screwed me hard.
   0.2.3    30 Jun 06     attila  released on freshmeat

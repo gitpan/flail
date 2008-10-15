@@ -1,7 +1,7 @@
 ##
 # identities.pl - code to manage multiple identities in flail
 #
-# Time-stamp: <2006-11-11 19:55:25 attila@stalphonsos.com>
+# Time-stamp: <2007-06-11 13:24:28 snl@cluefactory.com>
 # $Id: identities.pl,v 1.2 2006/06/29 22:13:31 attila Exp $
 #
 # Copyright (C) 2006 by Sean Levy <snl@cluefactory.com>.
@@ -92,9 +92,16 @@ sub become {
   $CurrentIdentity = $id;
   $FromAddress = $IDENTITIES{$id};
   if (exists($ID_SMTP{$id})) {
-    ($SMTPHost,$SMTPPort) = split(/:/,$ID_SMTP{$id});
-    $SMTPPort ||= 25;
-    print "$id: $FromAddress => $SMTPHost:$SMTPPort\n" unless $Quiet;
+    my $str = $ID_SMTP{$id};
+    if ($str =~ /^!(.*)$/) {
+      $SMTPCommand = $1;
+      print "$id: using command: $SMTPCommand\n";
+    } else {
+      $SMTPCommand = '';
+      ($SMTPHost,$SMTPPort) = split(/:/,$ID_SMTP{$id});
+      $SMTPPort ||= 25;
+      print "$id: $FromAddress => $SMTPHost:$SMTPPort\n" unless $Quiet;
+    }
   } else {
     ($SMTPHost,$SMTPPort) = split(/:/,$ID_SMTP{' default'});
     $SMTPPort ||= 25;
@@ -112,8 +119,10 @@ sub cmd_be {
   }
 }
 
+flail_emit(" [Id]") unless $Quiet;
 
 1;
+
 __END__
 
 # Local variables:
